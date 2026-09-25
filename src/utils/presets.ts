@@ -1,4 +1,4 @@
-import type { QRPreset } from '../types/qr';
+import type { QRPreset, QRCustomization } from '../types/qr';
 
 export const QR_PRESETS: QRPreset[] = [
   {
@@ -9,6 +9,10 @@ export const QR_PRESETS: QRPreset[] = [
     bgColor: '#ffffff',
     errorCorrectionLevel: 'M',
     margin: 4,
+    moduleStyle: 'square',
+    gradientEnabled: false,
+    gradientColor: '#334155',
+    gradientDirection: 'vertical',
   },
   {
     id: 'editorial',
@@ -18,6 +22,10 @@ export const QR_PRESETS: QRPreset[] = [
     bgColor: '#faf8f5',
     errorCorrectionLevel: 'M',
     margin: 4,
+    moduleStyle: 'rounded',
+    gradientEnabled: false,
+    gradientColor: '#44403c',
+    gradientDirection: 'vertical',
   },
   {
     id: 'midnight',
@@ -27,6 +35,10 @@ export const QR_PRESETS: QRPreset[] = [
     bgColor: '#f4f7fa',
     errorCorrectionLevel: 'Q',
     margin: 4,
+    moduleStyle: 'square',
+    gradientEnabled: false,
+    gradientColor: '#134074',
+    gradientDirection: 'diagonal',
   },
   {
     id: 'mono',
@@ -36,6 +48,10 @@ export const QR_PRESETS: QRPreset[] = [
     bgColor: '#f4f4f5',
     errorCorrectionLevel: 'M',
     margin: 4,
+    moduleStyle: 'dots',
+    gradientEnabled: false,
+    gradientColor: '#3f3f46',
+    gradientDirection: 'vertical',
   },
   {
     id: 'forest',
@@ -45,15 +61,26 @@ export const QR_PRESETS: QRPreset[] = [
     bgColor: '#f0fdf4',
     errorCorrectionLevel: 'M',
     margin: 4,
+    moduleStyle: 'square',
+    gradientEnabled: false,
+    gradientColor: '#047857',
+    gradientDirection: 'vertical',
   },
 ];
 
 export const DEFAULT_PRESET = QR_PRESETS[0];
 
-export const DEFAULT_CUSTOMIZATION = {
+export const DEFAULT_CUSTOMIZATION: QRCustomization = {
   size: 360,
   fgColor: DEFAULT_PRESET.fgColor,
   bgColor: DEFAULT_PRESET.bgColor,
   errorCorrectionLevel: DEFAULT_PRESET.errorCorrectionLevel,
   margin: DEFAULT_PRESET.margin,
+  moduleStyle: 'square',
+  gradientEnabled: false,
+  gradientColor: '#334155',
+  gradientDirection: 'vertical',
+  logoDataUrl: null,
+  logoSize: 20,
+  label: '',
 };

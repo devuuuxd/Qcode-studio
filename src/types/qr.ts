@@ -2,6 +2,12 @@ export type QRType = 'url' | 'text' | 'email' | 'phone' | 'wifi';
 
 export type ErrorCorrectionLevel = 'L' | 'M' | 'Q' | 'H';
 
+export type ModuleStyle = 'square' | 'rounded' | 'dots';
+
+export type GradientDirection = 'none' | 'vertical' | 'horizontal' | 'diagonal';
+
+export type ThemeMode = 'light' | 'dark' | 'system';
+
 export interface UrlFormData {
   url: string;
 }
@@ -45,6 +51,13 @@ export interface QRCustomization {
   bgColor: string;
   errorCorrectionLevel: ErrorCorrectionLevel;
   margin: number;
+  moduleStyle: ModuleStyle;
+  gradientEnabled: boolean;
+  gradientColor: string;
+  gradientDirection: GradientDirection;
+  logoDataUrl: string | null;
+  logoSize: number;
+  label: string;
 }
 
 export interface QRPreset {
@@ -55,6 +68,17 @@ export interface QRPreset {
   bgColor: string;
   errorCorrectionLevel: ErrorCorrectionLevel;
   margin: number;
+  moduleStyle?: ModuleStyle;
+  gradientEnabled?: boolean;
+  gradientColor?: string;
+  gradientDirection?: GradientDirection;
+}
+
+export interface QRTemplate {
+  id: string;
+  name: string;
+  createdAt: number;
+  customization: QRCustomization;
 }
 
 export interface ScanSafetyIssue {
@@ -63,7 +87,7 @@ export interface ScanSafetyIssue {
   title: string;
   message: string;
   remedy?: string;
-  suggestedAction?: 'reset-contrast' | 'increase-margin' | 'invert-colors' | 'lower-ecl';
+  suggestedAction?: 'reset-contrast' | 'increase-margin' | 'invert-colors' | 'lower-ecl' | 'boost-ecl' | 'reduce-logo';
 }
 
 export type ScanSafetyStatus = 'optimal' | 'acceptable' | 'warning' | 'critical';
@@ -71,12 +95,17 @@ export type ScanSafetyStatus = 'optimal' | 'acceptable' | 'warning' | 'critical'
 export interface ScanSafetyReport {
   status: ScanSafetyStatus;
   contrastRatio: number;
+  gradientContrastRatio?: number;
   isInverted: boolean;
   quietZoneModules: number;
   isMarginUnsafe: boolean;
   isDense: boolean;
+  logoRisk: boolean;
+  patternRisk: boolean;
   score: number;
   issues: ScanSafetyIssue[];
+  decodeVerified?: boolean | null;
+  decodeMessage?: string;
 }
 
 export interface HistoryItem {
@@ -88,9 +117,19 @@ export interface HistoryItem {
   formData: AnyFormData;
   customization: QRCustomization;
   presetId?: string;
+  pinned?: boolean;
+  customName?: string;
 }
 
 export interface ValidationResult {
   isValid: boolean;
   errors: Record<string, string>;
+}
+
+export interface ConfigExport {
+  version: string;
+  timestamp: number;
+  type: QRType;
+  formData: AnyFormData;
+  customization: QRCustomization;
 }

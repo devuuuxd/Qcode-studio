@@ -1,22 +1,20 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import type {
   QRType,
-  FormDataMap,
+  AnyFormData,
   QRCustomization,
-  QRPreset,
   HistoryItem,
   ScanSafetyIssue,
+  QRTemplate,
 } from './types/qr';
-import { buildQrPayload, getPayloadSummary } from './utils/qrPayload';
-import { validateQrForm } from './utils/validation';
 import { evaluateScanSafety } from './utils/scanSafety';
-import { DEFAULT_CUSTOMIZATION } from './utils/presets';
-import {
-  loadHistory,
-  saveHistoryItem,
-  deleteHistoryItem,
-  clearAllHistory,
-} from './utils/storage';
+
+import { useTheme } from './hooks/useTheme';
+import { useQrEditor } from './hooks/useQrEditor';
+import { useQrCustomization } from './hooks/useQrCustomization';
+import { useQrHistory } from './hooks/useQrHistory';
+import { useQrTemplates } from './hooks/useQrTemplates';
+import { useShareConfig } from './hooks/useShareConfig';
 
 import { Header } from './components/Header';
 import { TypeSelector } from './components/TypeSelector';
@@ -27,9 +25,12 @@ import { PhoneForm } from './components/forms/PhoneForm';
 import { WifiForm } from './components/forms/WifiForm';
 
 import { PresetsBar } from './components/Customization/PresetsBar';
+import { TemplateManager } from './components/Customization/TemplateManager';
+import { PatternEditor } from './components/Customization/PatternEditor';
 import { ColorEditor } from './components/Customization/ColorEditor';
-import { LayoutEditor } from './components/Customization/LayoutEditor';
+import { LogoEditor } from './components/Customization/LogoEditor';
 import { ErrorCorrectionEditor } from './components/Customization/ErrorCorrectionEditor';
+import { LayoutEditor } from './components/Customization/LayoutEditor';
 
 import { QrCanvas } from './components/Preview/QrCanvas';
 import { ScanSafetyPanel } from './components/Preview/ScanSafetyPanel';
@@ -38,24 +39,78 @@ import { PayloadInspector } from './components/Preview/PayloadInspector';
 import { RecentList } from './components/History/RecentList';
 import { Toast, type ToastMessage } from './components/common/Toast';
 
+import { ShareModal } from './components/Modals/ShareModal';
+import { ImportExportModal } from './components/Modals/ImportExportModal';
+import { BatchModal } from './components/Modals/BatchModal';
+
 import './App.css';
 
-const INITIAL_FORM_DATA: FormDataMap = {
-  url: { url: 'https://github.com' },
-  text: { text: '' },
-  email: { email: '', subject: '', message: '' },
-  phone: { phone: '' },
-  wifi: { ssid: '', password: '', security: 'WPA', hidden: false },
-};
-
 export const App: React.FC = () => {
-  const [selectedType, setSelectedType] = useState<QRType>('url');
-  const [formData, setFormData] = useState<FormDataMap>(INITIAL_FORM_DATA);
-  const [customization, setCustomization] = useState<QRCustomization>(DEFAULT_CUSTOMIZATION);
-  const [activePresetId, setActivePresetId] = useState<string | null>('classic');
-  const [history, setHistory] = useState<HistoryItem[]>(() => loadHistory());
-  const [activeHistoryId, setActiveHistoryId] = useState<string | undefined>();
+  const { theme, cycleTheme } = useTheme();
+
+  const {
+    selectedType,
+    formData,
+    currentFormData,
+    payload,
+    validation,
+    summary,
+    setSelectedType,
+    updateForm,
+    setAllFormData,
+    resetEditor,
+  } = useQrEditor();
+
+  const {
+    customization,
+    activePresetId,
+    selectPreset,
+    updateFg,
+    updateBg,
+    swapColors,
+    updateSize,
+    updateMargin,
+    updateEcl,
+    updateModuleStyle,
+    toggleGradient,
+    updateGradientColor,
+    updateGradientDirection,
+    updateLogo,
+    updateLogoSize,
+    removeLogo,
+    updateLabel,
+    applyCustomization,
+    applyRemedy,
+    resetCustomization,
+  } = useQrCustomization();
+
+  const {
+    history,
+    filteredHistory,
+    activeHistoryId,
+    searchQuery,
+    setSearchQuery,
+    setActiveHistoryId,
+    saveItem,
+    deleteItem,
+    clearAll: clearAllHistoryState,
+    togglePin,
+    renameItem,
+  } = useQrHistory();
+
+  const { templates, saveNewTemplate, removeTemplate } = useQrTemplates();
+  const { getShareableUrl, checkInitialShareConfig } = useShareConfig();
+
+  const [opticalDecodeResult, setOpticalDecodeResult] = useState<{
+    success: boolean;
+    data?: string;
+    error?: string;
+  } | null>(null);
+
   const [toast, setToast] = useState<ToastMessage | null>(null);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [isImportExportModalOpen, setIsImportExportModalOpen] = useState(false);
+  const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
 
   const saveDebounceTimer = useRef<number | null>(null);
 
@@ -67,33 +122,20 @@ export const App: React.FC = () => {
     });
   }, []);
 
-  const handleUpdateForm = useCallback(
-    <T extends QRType>(type: T, updates: Partial<FormDataMap[T]>) => {
-      setFormData((prev) => ({
-        ...prev,
-        [type]: {
-          ...prev[type],
-          ...updates,
-        },
-      }));
-    },
-    []
-  );
-
-  const currentFormData = formData[selectedType];
-  const payload = useMemo(
-    () => buildQrPayload(selectedType, currentFormData),
-    [selectedType, currentFormData]
-  );
-
-  const validation = useMemo(
-    () => validateQrForm(selectedType, currentFormData),
-    [selectedType, currentFormData]
-  );
+  useEffect(() => {
+    const shared = checkInitialShareConfig();
+    if (shared) {
+      queueMicrotask(() => {
+        setAllFormData(shared.type, shared.formData);
+        applyCustomization(shared.customization, null);
+        showToast('info', `Loaded shared ${shared.type.toUpperCase()} configuration.`);
+      });
+    }
+  }, [checkInitialShareConfig, setAllFormData, applyCustomization, showToast]);
 
   const scanSafety = useMemo(
-    () => evaluateScanSafety(customization, payload.length),
-    [customization, payload.length]
+    () => evaluateScanSafety(customization, payload.length, opticalDecodeResult),
+    [customization, payload.length, opticalDecodeResult]
   );
 
   useEffect(() => {
@@ -104,16 +146,15 @@ export const App: React.FC = () => {
     }
 
     saveDebounceTimer.current = window.setTimeout(() => {
-      const summary = getPayloadSummary(selectedType, currentFormData);
-      const updated = saveHistoryItem(
+      saveItem(
         selectedType,
-        summary,
+        customization.label.trim() || summary,
         payload,
         currentFormData,
         customization,
-        activePresetId || undefined
+        activePresetId || undefined,
+        customization.label.trim() || undefined
       );
-      setHistory(updated);
     }, 1800);
 
     return () => {
@@ -121,126 +162,95 @@ export const App: React.FC = () => {
         window.clearTimeout(saveDebounceTimer.current);
       }
     };
-  }, [payload, validation.isValid, selectedType, currentFormData, customization, activePresetId]);
-
-  const handleSelectPreset = (preset: QRPreset) => {
-    setActivePresetId(preset.id);
-    setCustomization((prev) => ({
-      ...prev,
-      fgColor: preset.fgColor,
-      bgColor: preset.bgColor,
-      errorCorrectionLevel: preset.errorCorrectionLevel,
-      margin: preset.margin,
-    }));
-  };
-
-  const handleUpdateFg = (color: string) => {
-    setCustomization((prev) => ({ ...prev, fgColor: color }));
-  };
-
-  const handleUpdateBg = (color: string) => {
-    setCustomization((prev) => ({ ...prev, bgColor: color }));
-  };
-
-  const handleSwapColors = () => {
-    setCustomization((prev) => ({
-      ...prev,
-      fgColor: prev.bgColor,
-      bgColor: prev.fgColor,
-    }));
-  };
-
-  const handleUpdateSize = (size: number) => {
-    setCustomization((prev) => ({ ...prev, size }));
-  };
-
-  const handleUpdateMargin = (margin: number) => {
-    setCustomization((prev) => ({ ...prev, margin }));
-  };
-
-  const handleUpdateEcl = (level: QRCustomization['errorCorrectionLevel']) => {
-    setCustomization((prev) => ({ ...prev, errorCorrectionLevel: level }));
-  };
+  }, [
+    payload,
+    validation.isValid,
+    selectedType,
+    currentFormData,
+    customization,
+    activePresetId,
+    summary,
+    saveItem,
+  ]);
 
   const handleFixSafetyIssue = (action?: ScanSafetyIssue['suggestedAction']) => {
-    if (!action) return;
-
-    switch (action) {
-      case 'reset-contrast':
-        setCustomization((prev) => ({
-          ...prev,
-          fgColor: '#1E1B24',
-          bgColor: '#FFFFFF',
-        }));
-        showToast('info', 'High ink contrast applied.');
-        break;
-
-      case 'increase-margin':
-        setCustomization((prev) => ({
-          ...prev,
-          margin: 4,
-        }));
-        showToast('info', 'Standard 4-module quiet zone restored.');
-        break;
-
-      case 'invert-colors':
-        handleSwapColors();
-        showToast('info', 'Inverted to standard dark-on-light.');
-        break;
-
-      case 'lower-ecl':
-        setCustomization((prev) => ({
-          ...prev,
-          errorCorrectionLevel: 'M',
-        }));
-        showToast('info', 'Error Correction set to Medium (15%).');
-        break;
+    const message = applyRemedy(action);
+    if (message) {
+      showToast('info', message);
     }
   };
 
   const handleRestoreHistory = (item: HistoryItem) => {
-    setSelectedType(item.type);
-    setFormData((prev) => ({
-      ...prev,
-      [item.type]: item.formData,
-    }));
-    setCustomization(item.customization);
-    setActivePresetId(item.presetId || null);
+    setAllFormData(item.type, item.formData);
+    applyCustomization(item.customization, item.presetId || null);
     setActiveHistoryId(item.id);
-    showToast('info', `Restored ${item.type.toUpperCase()}: ${item.title}`);
+    showToast('info', `Restored ${item.type.toUpperCase()}: ${item.customName || item.title}`);
   };
 
-  const handleDeleteHistory = (id: string) => {
-    const updated = deleteHistoryItem(id);
-    setHistory(updated);
-    if (activeHistoryId === id) {
-      setActiveHistoryId(undefined);
-    }
+  const handleApplyTemplate = (tmpl: QRTemplate) => {
+    applyCustomization(tmpl.customization, null);
+    showToast('info', `Applied template: ${tmpl.name}`);
+  };
+
+  const handleApplyImportedConfig = (
+    type: QRType,
+    newFormData: AnyFormData,
+    newCustomization: QRCustomization
+  ) => {
+    setAllFormData(type, newFormData);
+    applyCustomization(newCustomization, null);
+    setActiveHistoryId(undefined);
   };
 
   const handleClearAllHistory = () => {
     if (window.confirm('Clear all saved QR configurations?')) {
-      clearAllHistory();
-      setHistory([]);
-      setActiveHistoryId(undefined);
+      clearAllHistoryState();
       showToast('info', 'History cleared.');
     }
   };
 
   const handleResetAll = () => {
     if (window.confirm('Reset all values to initial defaults?')) {
-      setSelectedType('url');
-      setFormData(INITIAL_FORM_DATA);
-      setCustomization(DEFAULT_CUSTOMIZATION);
-      setActivePresetId('classic');
+      resetEditor();
+      resetCustomization();
       setActiveHistoryId(undefined);
       showToast('info', 'Editor reset to initial defaults.');
     }
   };
 
+  const shareUrl = useMemo(
+    () => getShareableUrl(selectedType, currentFormData, customization),
+    [getShareableUrl, selectedType, currentFormData, customization]
+  );
+
   return (
     <div className="app-shell">
-      <Header onReset={handleResetAll} />
+      <Header
+        theme={theme}
+        onCycleTheme={cycleTheme}
+        onOpenShare={() => setIsShareModalOpen(true)}
+        onOpenImportExport={() => setIsImportExportModalOpen(true)}
+        onOpenBatch={() => setIsBatchModalOpen(true)}
+        onReset={handleResetAll}
+      />
+
+      <div className="print-document-zone" aria-hidden="true">
+        <div className="print-content">
+          <QrCanvas
+            payload={payload}
+            customization={customization}
+            isValid={validation.isValid}
+          />
+          {customization.label ? (
+            <h2 className="print-label-heading">{customization.label}</h2>
+          ) : (
+            <p className="print-summary-text">{summary}</p>
+          )}
+          <span className="print-specs-meta">
+            {customization.size}px · {customization.errorCorrectionLevel} ECL · {customization.moduleStyle}
+          </span>
+        </div>
+      </div>
 
       <main className="workbench-container">
         <div className="workbench">
@@ -255,40 +265,60 @@ export const App: React.FC = () => {
               />
             </div>
 
+            <div className="input-field-wrapper label-input-wrapper">
+              <div className="input-label-row">
+                <label htmlFor="qr-label-input" className="input-label">
+                  Label / Name
+                </label>
+                <span className="label-optional">Optional</span>
+              </div>
+              <div className="input-control-box">
+                <input
+                  id="qr-label-input"
+                  type="text"
+                  className="text-input"
+                  placeholder="e.g., Office Wi-Fi, Portfolio, Menu"
+                  value={customization.label}
+                  onChange={(e) => updateLabel(e.target.value)}
+                  maxLength={48}
+                />
+              </div>
+            </div>
+
             <div className="editor-form-region" id={`panel-${selectedType}`}>
               {selectedType === 'url' && (
                 <UrlForm
                   data={formData.url}
                   errors={validation.errors}
-                  onChange={(up) => handleUpdateForm('url', up)}
+                  onChange={(up) => updateForm('url', up)}
                 />
               )}
               {selectedType === 'text' && (
                 <TextForm
                   data={formData.text}
                   errors={validation.errors}
-                  onChange={(up) => handleUpdateForm('text', up)}
+                  onChange={(up) => updateForm('text', up)}
                 />
               )}
               {selectedType === 'email' && (
                 <EmailForm
                   data={formData.email}
                   errors={validation.errors}
-                  onChange={(up) => handleUpdateForm('email', up)}
+                  onChange={(up) => updateForm('email', up)}
                 />
               )}
               {selectedType === 'phone' && (
                 <PhoneForm
                   data={formData.phone}
                   errors={validation.errors}
-                  onChange={(up) => handleUpdateForm('phone', up)}
+                  onChange={(up) => updateForm('phone', up)}
                 />
               )}
               {selectedType === 'wifi' && (
                 <WifiForm
                   data={formData.wifi}
                   errors={validation.errors}
-                  onChange={(up) => handleUpdateForm('wifi', up)}
+                  onChange={(up) => updateForm('wifi', up)}
                 />
               )}
             </div>
@@ -297,27 +327,55 @@ export const App: React.FC = () => {
               <PresetsBar
                 currentCustomization={customization}
                 activePresetId={activePresetId}
-                onSelectPreset={handleSelectPreset}
+                onSelectPreset={selectPreset}
+              />
+
+              <TemplateManager
+                templates={templates}
+                currentCustomization={customization}
+                onSaveTemplate={saveNewTemplate}
+                onApplyTemplate={handleApplyTemplate}
+                onDeleteTemplate={removeTemplate}
+              />
+
+              <PatternEditor
+                moduleStyle={customization.moduleStyle}
+                onChange={updateModuleStyle}
               />
 
               <ColorEditor
                 fgColor={customization.fgColor}
                 bgColor={customization.bgColor}
-                onChangeFg={handleUpdateFg}
-                onChangeBg={handleUpdateBg}
-                onSwapColors={handleSwapColors}
+                gradientEnabled={customization.gradientEnabled}
+                gradientColor={customization.gradientColor}
+                gradientDirection={customization.gradientDirection}
+                onChangeFg={updateFg}
+                onChangeBg={updateBg}
+                onSwapColors={swapColors}
+                onToggleGradient={toggleGradient}
+                onChangeGradientColor={updateGradientColor}
+                onChangeGradientDirection={updateGradientDirection}
+              />
+
+              <LogoEditor
+                logoDataUrl={customization.logoDataUrl}
+                logoSize={customization.logoSize}
+                errorCorrectionLevel={customization.errorCorrectionLevel}
+                onUpdateLogo={updateLogo}
+                onUpdateLogoSize={updateLogoSize}
+                onRemoveLogo={removeLogo}
               />
 
               <ErrorCorrectionEditor
                 level={customization.errorCorrectionLevel}
-                onChange={handleUpdateEcl}
+                onChange={updateEcl}
               />
 
               <LayoutEditor
                 size={customization.size}
                 margin={customization.margin}
-                onChangeSize={handleUpdateSize}
-                onChangeMargin={handleUpdateMargin}
+                onChangeSize={updateSize}
+                onChangeMargin={updateMargin}
               />
             </div>
           </div>
@@ -326,14 +384,22 @@ export const App: React.FC = () => {
             <div className="stage-sticky">
               <div className="qr-physical-card">
                 <div className="qr-card-header">
-                  <span className="qr-badge-type">{selectedType.toUpperCase()}</span>
-                  <span className="qr-badge-spec">{customization.size}px · {customization.errorCorrectionLevel}</span>
+                  <div className="qr-header-title-box">
+                    <span className="qr-badge-type">{selectedType.toUpperCase()}</span>
+                    {customization.label && (
+                      <span className="qr-badge-label">{customization.label}</span>
+                    )}
+                  </div>
+                  <span className="qr-badge-spec">
+                    {customization.size}px · {customization.errorCorrectionLevel} · {customization.moduleStyle}
+                  </span>
                 </div>
 
                 <QrCanvas
                   payload={payload}
                   customization={customization}
                   isValid={validation.isValid}
+                  onOpticalDecodeResult={setOpticalDecodeResult}
                 />
 
                 <ScanSafetyPanel
@@ -350,7 +416,11 @@ export const App: React.FC = () => {
                   onShowToast={showToast}
                 />
 
-                <PayloadInspector payload={payload} />
+                <PayloadInspector
+                  payload={payload}
+                  type={selectedType}
+                  customization={customization}
+                />
               </div>
             </div>
           </div>
@@ -359,13 +429,42 @@ export const App: React.FC = () => {
         <section className="workbench-history">
           <RecentList
             items={history}
+            filteredItems={filteredHistory}
             activeId={activeHistoryId}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
             onRestoreItem={handleRestoreHistory}
-            onDeleteItem={handleDeleteHistory}
+            onDeleteItem={deleteItem}
             onClearAll={handleClearAllHistory}
+            onTogglePin={togglePin}
+            onRenameItem={renameItem}
           />
         </section>
       </main>
+
+      <ShareModal
+        shareUrl={shareUrl}
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
+        onShowToast={showToast}
+      />
+
+      <ImportExportModal
+        currentType={selectedType}
+        currentFormData={currentFormData}
+        currentCustomization={customization}
+        isOpen={isImportExportModalOpen}
+        onClose={() => setIsImportExportModalOpen(false)}
+        onApplyConfig={handleApplyImportedConfig}
+        onShowToast={showToast}
+      />
+
+      <BatchModal
+        customization={customization}
+        isOpen={isBatchModalOpen}
+        onClose={() => setIsBatchModalOpen(false)}
+        onShowToast={showToast}
+      />
 
       <Toast toast={toast} onDismiss={() => setToast(null)} />
     </div>

@@ -48,10 +48,20 @@ export const ScanSafetyPanel: React.FC<ScanSafetyPanelProps> = ({
     <div className={`scan-check-card status-box-${report.status}`}>
       <div className="scan-check-top">
         <div className="scan-check-title-group">
-          <span className="scan-check-heading">SCAN CHECK</span>
+          <span className="scan-check-heading">SCAN SAFETY</span>
           <span className={`scan-stamp-badge ${status.pillClass}`}>
             {status.label}
           </span>
+          {report.decodeVerified === true && (
+            <span className="scan-stamp-badge stamp-verified" title="Optically decoded by client-side reader">
+              DECODE OK
+            </span>
+          )}
+          {report.decodeVerified === false && (
+            <span className="scan-stamp-badge stamp-unverified" title="Could not decode rendered image with client reader">
+              UNREADABLE
+            </span>
+          )}
         </div>
 
         <button
@@ -77,6 +87,8 @@ export const ScanSafetyPanel: React.FC<ScanSafetyPanelProps> = ({
             {actionableIssue.suggestedAction === 'increase-margin' && '⚡ Restore 4-Module Margin'}
             {actionableIssue.suggestedAction === 'invert-colors' && '⚡ Swap to Dark-on-Light'}
             {actionableIssue.suggestedAction === 'lower-ecl' && '⚡ Set Medium Error Correction'}
+            {actionableIssue.suggestedAction === 'boost-ecl' && '⚡ Boost Error Correction to High'}
+            {actionableIssue.suggestedAction === 'reduce-logo' && '⚡ Reduce Logo Area'}
           </button>
         )}
       </div>
@@ -85,9 +97,15 @@ export const ScanSafetyPanel: React.FC<ScanSafetyPanelProps> = ({
         <div className="scan-diag-drawer">
           <div className="diag-table">
             <div className="diag-row">
-              <span className="diag-term">Contrast Ratio</span>
+              <span className="diag-term">Foreground Contrast</span>
               <span className="diag-val">{report.contrastRatio.toFixed(2)}:1</span>
             </div>
+            {report.gradientContrastRatio !== undefined && (
+              <div className="diag-row">
+                <span className="diag-term">Gradient Accent Contrast</span>
+                <span className="diag-val">{report.gradientContrastRatio.toFixed(2)}:1</span>
+              </div>
+            )}
             <div className="diag-row">
               <span className="diag-term">Quiet Zone</span>
               <span className="diag-val">{report.quietZoneModules} modules</span>
@@ -97,12 +115,18 @@ export const ScanSafetyPanel: React.FC<ScanSafetyPanelProps> = ({
               <span className="diag-val">{report.isInverted ? 'Inverted (light on dark)' : 'Standard (dark on light)'}</span>
             </div>
             <div className="diag-row">
+              <span className="diag-term">Client Decode Check</span>
+              <span className="diag-val">
+                {report.decodeVerified === true ? 'Verified (Optical read passed)' : report.decodeVerified === false ? 'Failed (Unreadable)' : 'Pending'}
+              </span>
+            </div>
+            <div className="diag-row">
               <span className="diag-term">Readability Score</span>
               <span className="diag-val">{report.score} / 100</span>
             </div>
           </div>
           <p className="diag-disclaimer">
-            Practical decodability depends on physical camera focus, glare, and print substrate. Always verify with a physical camera before mass printing.
+            Optical decode checks verify raster patterns in-browser. Practical scanning depends on physical focal length, surface glare, ink bleed, and lighting. Always test on target physical devices.
           </p>
         </div>
       )}

@@ -1,11 +1,11 @@
 import type { QRType, FormDataMap, AnyFormData } from '../types/qr';
 
-/**
- * Escapes reserved characters in Wi-Fi SSID and Password strings
- * according to the ZXing barcode standard (backslash-escaped: \, ;, ,, :, ")
- */
 function escapeWifiValue(value: string): string {
   return value.replace(/([\\;,:"'])/g, '\\$1');
+}
+
+function unescapeWifiValue(value: string): string {
+  return value.replace(/\\([\\;,:"'])/g, '$1');
 }
 
 export function buildQrPayload(type: QRType, data: AnyFormData): string {
@@ -108,4 +108,73 @@ export function getPayloadSummary(type: QRType, data: AnyFormData): string {
     default:
       return 'QR Code';
   }
+}
+
+export function parseDecodedPayload(raw: string): { type: QRType; formData: FormDataMap[QRType] } {
+  const trimmed = raw.trim();
+
+  if (trimmed.startsWith('WIFI:') || trimmed.startsWith('wifi:')) {
+    const ssidMatch = trimmed.match(/(?:WIFI:|;)S:((?:\\;|[^;])*)/i);
+    const typeMatch = trimmed.match(/(?:WIFI:|;)T:([^;]*)/i);
+    const passMatch = trimmed.match(/(?:WIFI:|;)P:((?:\\;|[^;])*)/i);
+    const hiddenMatch = trimmed.match(/(?:WIFI:|;)H:(true|false)/i);
+
+    const ssid = ssidMatch ? unescapeWifiValue(ssidMatch[1]) : '';
+    const security = (typeMatch ? typeMatch[1] : 'WPA') as 'WPA' | 'WEP' | 'nopass';
+    const password = passMatch ? unescapeWifiValue(passMatch[1]) : '';
+    const hidden = hiddenMatch ? hiddenMatch[1].toLowerCase() === 'true' : false;
+
+    return {
+      type: 'wifi',
+      formData: {
+        ssid,
+        password,
+        security: ['WPA', 'WEP', 'nopass'].includes(security) ? security : 'WPA',
+        hidden,
+      },
+    };
+  }
+
+  if (trimmed.toLowerCase().startsWith('mailto:')) {
+    const mailtoContent = trimmed.slice(7);
+    const [emailPart, queryPart] = mailtoContent.split('?');
+    const params = new URLSearchParams(queryPart || '');
+    const subject = params.get('subject') || '';
+    const message = params.get('body') || '';
+
+    return {
+      type: 'email',
+      formData: {
+        email: decodeURIComponent(emailPart || ''),
+        subject,
+        message,
+      },
+    };
+  }
+
+  if (trimmed.toLowerCase().startsWith('tel:')) {
+    const phonePart = trimmed.slice(4);
+    return {
+      type: 'phone',
+      formData: {
+        phone: phonePart,
+      },
+    };
+  }
+
+  if (/^https?:\/\//i.test(trimmed) || /^[\w-]+\.[\w.-]+(\/.*)?$/i.test(trimmed)) {
+    return {
+      type: 'url',
+      formData: {
+        url: trimmed,
+      },
+    };
+  }
+
+  return {
+    type: 'text',
+    formData: {
+      text: trimmed,
+    },
+  };
 }

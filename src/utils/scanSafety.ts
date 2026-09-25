@@ -1,4 +1,9 @@
-import type { QRCustomization, ScanSafetyReport, ScanSafetyIssue, ScanSafetyStatus } from '../types/qr';
+import type {
+  QRCustomization,
+  ScanSafetyReport,
+  ScanSafetyIssue,
+  ScanSafetyStatus,
+} from '../types/qr';
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
   const clean = hex.replace('#', '').trim();
@@ -52,7 +57,8 @@ export function calculateContrastRatio(fgHex: string, bgHex: string): {
 
 export function evaluateScanSafety(
   customization: QRCustomization,
-  payloadLength: number
+  payloadLength: number,
+  decodeResult?: { success: boolean; data?: string; error?: string } | null
 ): ScanSafetyReport {
   const { ratio, isInverted } = calculateContrastRatio(
     customization.fgColor,
@@ -61,6 +67,37 @@ export function evaluateScanSafety(
 
   const issues: ScanSafetyIssue[] = [];
   let score = 100;
+
+  let gradientRatio: number | undefined;
+  if (customization.gradientEnabled && customization.gradientDirection !== 'none') {
+    const gradCheck = calculateContrastRatio(
+      customization.gradientColor,
+      customization.bgColor
+    );
+    gradientRatio = gradCheck.ratio;
+
+    if (gradCheck.ratio < 2.5) {
+      score -= 50;
+      issues.push({
+        id: 'critical-gradient-contrast',
+        severity: 'critical',
+        title: 'Critical: Gradient Contrast Too Low',
+        message: `Gradient secondary color contrast is ${gradCheck.ratio.toFixed(2)}:1. Modules fading into low contrast will fail camera reading.`,
+        remedy: 'Select a darker gradient accent or lighter background to achieve at least 4.5:1 contrast.',
+        suggestedAction: 'reset-contrast',
+      });
+    } else if (gradCheck.ratio < 4.5) {
+      score -= 25;
+      issues.push({
+        id: 'warning-gradient-contrast',
+        severity: 'warning',
+        title: 'Warning: Low Gradient Contrast',
+        message: `Gradient secondary color contrast is ${gradCheck.ratio.toFixed(2)}:1. Scanners in dim lighting may misread gradient edges.`,
+        remedy: 'Increase the contrast of the secondary gradient stop.',
+        suggestedAction: 'reset-contrast',
+      });
+    }
+  }
 
   if (ratio < 2.5) {
     score -= 60;
@@ -142,6 +179,48 @@ export function evaluateScanSafety(
     });
   }
 
+  const hasLogo = Boolean(customization.logoDataUrl);
+  let logoRisk = false;
+  if (hasLogo) {
+    if (customization.errorCorrectionLevel !== 'H') {
+      logoRisk = true;
+      score -= 25;
+      issues.push({
+        id: 'warning-logo-ecl',
+        severity: 'warning',
+        title: 'Logo Overlay: High ECL Recommended',
+        message: 'Center logo obstructs data modules. High (30%) error correction is strongly advised to maintain read margin.',
+        remedy: 'Switch error correction level to High (H).',
+        suggestedAction: 'boost-ecl',
+      });
+    }
+
+    if (customization.logoSize > 25) {
+      logoRisk = true;
+      score -= 20;
+      issues.push({
+        id: 'warning-logo-size',
+        severity: 'warning',
+        title: 'Logo Area Dangerously Large',
+        message: `Logo covers ${customization.logoSize}% of code width. Obstructing more than 25% exceeds error correction threshold.`,
+        remedy: 'Reduce logo size to 20% or less.',
+        suggestedAction: 'reduce-logo',
+      });
+    }
+  }
+
+  let patternRisk = false;
+  if (customization.moduleStyle === 'dots' && ratio < 6.0) {
+    patternRisk = true;
+    score -= 10;
+    issues.push({
+      id: 'info-dots-contrast',
+      severity: 'info',
+      title: 'Dot Pattern Contrast Sensitivity',
+      message: 'Dot modules have less optical surface area than squares. Maintain high contrast for swift scanning.',
+    });
+  }
+
   score = Math.max(0, Math.min(100, score));
 
   let status: ScanSafetyStatus = 'optimal';
@@ -153,14 +232,40 @@ export function evaluateScanSafety(
     status = 'acceptable';
   }
 
+  let decodeVerified: boolean | null = null;
+  let decodeMessage: string | undefined;
+
+  if (decodeResult !== undefined && decodeResult !== null) {
+    decodeVerified = decodeResult.success;
+    if (decodeResult.success) {
+      decodeMessage = 'Optical decode verified by client-side detector';
+    } else {
+      decodeMessage = 'Client-side optical detector could not decode rendered image';
+      if (status !== 'critical') {
+        status = 'warning';
+      }
+      issues.unshift({
+        id: 'warning-optical-decode-failed',
+        severity: 'warning',
+        title: 'Optical Decode Unverified',
+        message: 'Browser barcode scanner could not decode the rendered matrix. Adjust styling or increase contrast.',
+      });
+    }
+  }
+
   return {
     status,
     contrastRatio: ratio,
+    gradientContrastRatio: gradientRatio,
     isInverted,
     quietZoneModules: quietZone,
     isMarginUnsafe,
     isDense,
+    logoRisk,
+    patternRisk,
     score,
     issues,
+    decodeVerified,
+    decodeMessage,
   };
 }

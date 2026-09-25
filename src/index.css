@@ -26,6 +26,25 @@
   --shadow-lg: 6px 6px 0px var(--ink);
 }
 
+[data-theme="dark"] {
+  --bg: #131217;
+  --bg-secondary: #1D1B24;
+  --surface: #22202C;
+  --ink: #F5F2EB;
+
+  --ink-muted: #A39FAE;
+  --ink-faint: #635E70;
+
+  --accent-red: #EF4444;
+  --accent-yellow: #F59E0B;
+  --accent-green: #10B981;
+  --accent-blue: #3B82F6;
+
+  --shadow-sm: 2px 2px 0px #000000;
+  --shadow-main: 4px 4px 0px #000000;
+  --shadow-lg: 6px 6px 0px #000000;
+}
+
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -70,4 +89,13 @@ button {
 
 :focus:not(:focus-visible) {
   outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
-import QRCode from 'qrcode';
 import type { QRCustomization } from '../../types/qr';
+import { renderQrToCanvas, verifyCanvasOpticalDecode } from '../../utils/qrRenderer';
 
 interface QrCanvasProps {
   payload: string;
   customization: QRCustomization;
   isValid: boolean;
   onCanvasReady?: (canvas: HTMLCanvasElement | null) => void;
+  onOpticalDecodeResult?: (res: { success: boolean; data?: string; error?: string }) => void;
 }
 
 export const QrCanvas: React.FC<QrCanvasProps> = ({
@@ -14,6 +15,7 @@ export const QrCanvas: React.FC<QrCanvasProps> = ({
   customization,
   isValid,
   onCanvasReady,
+  onOpticalDecodeResult,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
@@ -28,34 +30,43 @@ export const QrCanvas: React.FC<QrCanvasProps> = ({
         ctx.clearRect(0, 0, canvas.width, canvas.height);
       }
       if (onCanvasReady) onCanvasReady(null);
+      if (onOpticalDecodeResult) {
+        onOpticalDecodeResult({ success: false, error: 'Awaiting valid input' });
+      }
       return;
     }
 
     const displaySize = Math.min(customization.size, 480);
-    canvas.width = displaySize;
-    canvas.height = displaySize;
 
-    QRCode.toCanvas(canvas, payload, {
-      width: displaySize,
-      margin: customization.margin,
-      color: {
-        dark: customization.fgColor,
-        light: customization.bgColor,
-      },
-      errorCorrectionLevel: customization.errorCorrectionLevel,
-    })
-      .then(() => {
+    renderQrToCanvas(canvas, payload, customization, displaySize)
+      .then((ok) => {
+        if (!ok) {
+          setRenderError('Could not encode payload. Text may exceed QR capacity limit.');
+          if (onCanvasReady) onCanvasReady(null);
+          if (onOpticalDecodeResult) {
+            onOpticalDecodeResult({ success: false, error: 'Render failed' });
+          }
+          return;
+        }
+
         setRenderError(null);
         if (onCanvasReady) {
           onCanvasReady(canvas);
         }
+
+        const decodeRes = verifyCanvasOpticalDecode(canvas);
+        if (onOpticalDecodeResult) {
+          onOpticalDecodeResult(decodeRes);
+        }
       })
       .catch((err) => {
-        console.error('QR rendering error:', err);
         setRenderError('Could not encode payload. Text may exceed QR capacity limit.');
         if (onCanvasReady) onCanvasReady(null);
+        if (onOpticalDecodeResult) {
+          onOpticalDecodeResult({ success: false, error: String(err) });
+        }
       });
-  }, [payload, customization, isValid, onCanvasReady]);
+  }, [payload, customization, isValid, onCanvasReady, onOpticalDecodeResult]);
 
   return (
     <div className="canvas-wrapper-outer">

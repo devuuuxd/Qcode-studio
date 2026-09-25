@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import type { QRCustomization, QRType, ScanSafetyReport } from '../../types/qr';
 import { downloadPng, downloadSvg, copyQrToClipboard } from '../../utils/export';
-import { DownloadIcon, CopyIcon } from '../common/Icons';
+import { DownloadIcon, CopyIcon, PrinterIcon } from '../common/Icons';
 
 interface ExportActionsProps {
   payload: string;
@@ -40,8 +40,7 @@ export const ExportActions: React.FC<ExportActionsProps> = ({
       });
       onShowToast('success', `Downloaded PNG (${pngResolution}px)`);
       if (onTrackExport) onTrackExport();
-    } catch (err) {
-      console.error('Download failed:', err);
+    } catch {
       onShowToast('warning', 'Failed to generate PNG.');
     } finally {
       setIsExporting(false);
@@ -57,8 +56,7 @@ export const ExportActions: React.FC<ExportActionsProps> = ({
       await downloadSvg(payload, customization, filename);
       onShowToast('success', 'Vector SVG downloaded.');
       if (onTrackExport) onTrackExport();
-    } catch (err) {
-      console.error('SVG download failed:', err);
+    } catch {
       onShowToast('warning', 'Failed to export SVG.');
     } finally {
       setIsExporting(false);
@@ -72,12 +70,16 @@ export const ExportActions: React.FC<ExportActionsProps> = ({
     try {
       await copyQrToClipboard(payload, customization);
       onShowToast('success', 'PNG copied to clipboard.');
-    } catch (err) {
-      console.error('Clipboard copy failed:', err);
+    } catch {
       onShowToast('info', 'Clipboard image copy not supported in this browser.');
     } finally {
       setIsExporting(false);
     }
+  };
+
+  const handlePrint = () => {
+    if (isDisabled) return;
+    window.print();
   };
 
   return (
@@ -134,6 +136,17 @@ export const ExportActions: React.FC<ExportActionsProps> = ({
         >
           <CopyIcon size={14} />
           <span>Copy Image</span>
+        </button>
+
+        <button
+          type="button"
+          className="btn-export-secondary btn-export-print"
+          onClick={handlePrint}
+          disabled={isDisabled}
+          title="Print QR code"
+        >
+          <PrinterIcon size={14} />
+          <span>Print</span>
         </button>
       </div>
     </div>
